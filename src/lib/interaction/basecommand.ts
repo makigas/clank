@@ -1,5 +1,6 @@
 import axios from "axios";
 import { APIGuildInteraction } from "discord-api-types";
+import { Guild } from "discord.js";
 import Makibot from "../../Makibot";
 import logger from "../logger";
 
@@ -20,7 +21,7 @@ export default abstract class InteractionCommand<Params> {
   }
 
   abstract name: string;
-  abstract handle(params?: Params): Promise<void>;
+  abstract handle(guild: Guild, params?: Params): Promise<void>;
 
   sendResponse(response: string, ephemeral: boolean = false): Promise<void> {
     const payload: any = {
