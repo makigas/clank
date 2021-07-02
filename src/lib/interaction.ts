@@ -10,6 +10,7 @@ import WarnCommand from "../interactions/commands/warn";
 import KarmaCommand from "../interactions/commands/karma";
 import PrimoCommand from "../interactions/commands/primo";
 import RaidCommand from "../interactions/commands/raid";
+import ResponderCommand from "../interactions/commands/responder";
 import Makibot from "../Makibot";
 import InteractionCommand from "./interaction/basecommand";
 import logger from "./logger";
@@ -25,6 +26,7 @@ const Handlers: { [name: string]: HandlerConstructor } = {
   primo: PrimoCommand,
   raid: RaidCommand,
   warn: WarnCommand,
+  responder: ResponderCommand,
 };
 
 function isThisEventAGuildInteraction(event: APIInteraction): event is APIGuildInteraction {
