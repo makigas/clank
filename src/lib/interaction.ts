@@ -2,6 +2,10 @@ import {
   APIApplicationCommandInteractionDataOption,
   APIGuildInteraction,
   APIInteraction,
+  ApplicationCommandInteractionDataOptionChannel,
+  ApplicationCommandInteractionDataOptionMentionable,
+  ApplicationCommandInteractionDataOptionRole,
+  ApplicationCommandInteractionDataOptionUser,
   ApplicationCommandOptionType,
   InteractionType,
 } from "discord-api-types/v8";
@@ -49,7 +53,7 @@ async function convertParameters(
   /* Too scared to do it with a reduce, because there are asyncs. */
   const parsedParams = {};
 
-  for (let option of params) {
+  for (const option of params) {
     switch (option.type) {
       case ApplicationCommandOptionType.BOOLEAN:
       case ApplicationCommandOptionType.INTEGER:
@@ -58,26 +62,29 @@ async function convertParameters(
         break;
 
       case ApplicationCommandOptionType.CHANNEL: {
-        let channel = guild.channels.cache.get(option.value);
+        const channel = guild.channels.cache.get(option.value);
         parsedParams[option.name] = channel;
         break;
       }
       case ApplicationCommandOptionType.USER: {
-        let user = await guild.members.fetch(option.value);
+        const user = await guild.members.fetch(option.value);
         parsedParams[option.name] = user;
+        break;
       }
       case ApplicationCommandOptionType.ROLE: {
-        let role = await guild.roles.fetch(option.value);
+        const role = await guild.roles.fetch(option.value);
         parsedParams[option.name] = role;
+        break;
       }
       case ApplicationCommandOptionType.MENTIONABLE: {
         try {
-          let user = await guild.members.fetch(option.value);
+          const user = await guild.members.fetch(option.value);
           parsedParams[option.name] = user;
         } catch (e) {
-          let role = await guild.roles.fetch(option.value);
+          const role = await guild.roles.fetch(option.value);
           parsedParams[option.name] = role;
         }
+        break;
       }
     }
   }
@@ -85,22 +92,68 @@ async function convertParameters(
   return parsedParams;
 }
 
-export async function handleInteraction(client: Makibot, event: APIInteraction) {
+function interpolate(string: string, name: string, value: string): string {
+  const interpolation = `%${name}%`;
+  const regexp = new RegExp(interpolation, "g");
+  return string.replace(regexp, value);
+}
+
+export async function handleInteraction(client: Makibot, event: APIInteraction): Promise<void> {
   logger.debug("[interactions] received event: ", event);
   if (isThisEventAGuildInteraction(event)) {
-    let guild = await client.guilds.fetch(event.guild_id);
-    let server = new Server(guild);
-    let replies = server.tagbag.tag("reply").get({});
+    const guild = await client.guilds.fetch(event.guild_id);
+    const server = new Server(guild);
+    const replies = server.tagbag.tag("reply").get({});
 
     if (Handlers[event.data.name]) {
       /* Run the interaction command for this. */
-      let handler = new Handlers[event.data.name](client, event);
-      let parameters = event.data.options ? await convertParameters(event.data.options, guild) : {};
+      const handler = new Handlers[event.data.name](client, event);
+      const parameters = event.data.options
+        ? await convertParameters(event.data.options, guild)
+        : {};
       handler.handle(guild, parameters);
     } else if (replies[event.data.name]) {
       /* A local command with this name exists, so send the response. */
-      let data = replies[event.data.name];
-      await sendResponse(event, data.respuesta, data.efimero);
+      const data = replies[event.data.name];
+      console.log(event.data);
+      const options = event.data.options || [];
+      const params = convertParameters(options, guild);
+
+      /*
+       * Fill interpolations in the template text. They have the format
+       * %var%, asking to be replaced by the option given as [var]. The
+       * interpolation is resolved as:
+       *
+       * - For a channel, the name of the channel.
+       * - For an user, a role or a mentionable, an at-mention.
+       * - For a mentionable, the snowflake (doesn't make sense BUT
+       *   what the heck is a mentionable anyway?)
+       * - For anything else, converts to string.
+       */
+      const interpolatedResponse = options.reduce((response, option) => {
+        switch (option.type) {
+          case ApplicationCommandOptionType.CHANNEL: {
+            const channelOption = option as ApplicationCommandInteractionDataOptionChannel;
+            return interpolate(response, option.name, `<#${channelOption.value}>`);
+          }
+          case ApplicationCommandOptionType.USER: {
+            const userOption = option as ApplicationCommandInteractionDataOptionUser;
+            return interpolate(response, option.name, `<@${userOption.value}>`);
+          }
+          case ApplicationCommandOptionType.ROLE: {
+            const roleOption = option as ApplicationCommandInteractionDataOptionRole;
+            return interpolate(response, option.name, `<&${roleOption.value}>`);
+          }
+          case ApplicationCommandOptionType.MENTIONABLE: {
+            const mentionable = option as ApplicationCommandInteractionDataOptionMentionable;
+            return interpolate(response, option.name, mentionable.value);
+          }
+          default:
+            return interpolate(response, option.name, params[option.name]);
+        }
+      }, data.respuesta);
+
+      await sendResponse(event, interpolatedResponse, data.efimero);
     }
   }
 }
